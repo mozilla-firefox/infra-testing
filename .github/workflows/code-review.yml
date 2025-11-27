@@ -1,0 +1,15 @@
+name: Code Review bot trigger
+on:
+  pull_request_target:
+    types: [opened, reopened]
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: "python/code-review"
+      - name: close
+        run: python ./python/code-review/test.py
+
