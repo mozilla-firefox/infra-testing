@@ -23,3 +23,5 @@ Keep in mind that nightly builds, which are used by Firefox developers for
 testing, may be buggy.
 
 blah
+
+Sample change to trigger CI.
