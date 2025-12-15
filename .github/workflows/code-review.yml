@@ -10,6 +10,16 @@ jobs:
         uses: actions/checkout@v6
         with:
           sparse-checkout: "python/code-review"
-      - name: close
-        run: python ./python/code-review/test.py
 
+      - name: setup Python deps
+        run: pip install requests
+
+      - name: lando-push-to-try
+        run: python ./python/code-review/lando.py
+
+        env:
+          # Expose the pull request number as it's not available in Github Actions env variables
+          GITHUB_PR_NUMBER: ${{ github.event.number }}
+
+          # Lando Auth is provided from Github actions secrets
+          LANDO_API_TOKEN: ${{ secrets.LandoAPIToken }}
